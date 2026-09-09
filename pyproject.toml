@@ -7,11 +7,29 @@ authors = [
     { name = "JozefZiduliak", email = "Jozef.Ziduliak@bavenir.eu" }
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "duckdb>=1.5.5",
+    "fastapi>=0.141.1",
+    "pyarrow>=25.0.1",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+    "pyiceberg[s3fs,sql-postgres]>=0.12.0",
+    "python-ulid>=4.0.1",
+    "pyyaml>=6.0.3",
+    "rdflib>=7.6.0",
+    "uvicorn>=0.52.4",
+    "valkey>=6.1.1",
+]
 
-[project.scripts]
-iot-ingestion = "iot_ingestion:main"
+[tool.uv.build-backend]
+module-name = "app"
+module-root = ""
 
 [build-system]
 requires = ["uv_build>=0.12.6,<0.13.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

@@ -1,0 +1,18 @@
+# M3 — reference mapper: flat {temp, hum}, humidity 0-1 scaled to percent.
+# id: indoor-air-quality
+# version: 1
+# target_table: silver_air_quality
+# match:
+#   required_keys: [temp, hum]
+# columns:
+#   - name: temperature
+#     from: $.temp
+#     type: double
+#     unit: unit:DEG_C
+#     property_iri: qudt:Temperature
+#   - name: humidity
+#     from: $.hum
+#     type: double
+#     scale: 100
+#     unit: unit:PERCENT_RH
+#     property_iri: qudt:RelativeHumidity
