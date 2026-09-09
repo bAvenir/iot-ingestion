@@ -1,0 +1,24 @@
+project:
+  name: iot-ingestion 
+  language: python        # python | node | java | auto  (java auto-detects maven vs gradle)
+
+image:                    # optional — only used when there's a Dockerfile (or snapshot/clean-snapshots)
+  registry: reg.bavenir.eu/private # <host>/<harbor-project>
+  name: iot-ingestion # optional; defaults to project.name
+
+git:                      # optional
+  remote: origin          # remote to push to (default: origin)
+  repo: bAvenir/iot-ingestion # optional owner/name; preflight verifies the real remote matches this
+
+llm:                      # optional — assists commit drafts + release notes (never blocks)
+  enabled: false
+  base_url: https://api.mistral.ai/v1   # later: your LiteLLM gateway
+  model: mistral-small-latest
+  api_key_env: MISTRAL_API_KEY          # ⚠ the NAME of the env var, not the key itself
+
+tests:                    # optional — local quality/security gates, opt-out (default on)
+  runner: auto            # auto | native | docker — auto uses the installed binary, else runs it in Docker
+  secret_scan: true       # gitleaks — scan git history for committed secrets
+  trivy_scan: true        # trivy fs — vulnerabilities + misconfigurations + secrets in the code
+  trivy_scanners: vuln,misconfig,secret   # which trivy scanners to run
+  trivy_severity: HIGH,CRITICAL           # severities that fail the gate
