@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
+    "boto3>=1.43.75",
     "duckdb>=1.5.5",
     "fastapi>=0.141.1",
     "pyarrow>=25.0.1",
@@ -17,6 +18,7 @@ dependencies = [
     "python-ulid>=4.0.1",
     "pyyaml>=6.0.3",
     "rdflib>=7.6.0",
+    "ruff>=0.16.6",
     "uvicorn>=0.52.4",
     "valkey>=6.1.1",
 ]
@@ -24,6 +26,9 @@ dependencies = [
 [tool.uv.build-backend]
 module-name = "app"
 module-root = ""
+
+[project.scripts]
+dev = "app.cli:dev"
 
 [build-system]
 requires = ["uv_build>=0.12.6,<0.13.0"]

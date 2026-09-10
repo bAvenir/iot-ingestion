@@ -28,9 +28,7 @@ class Settings(BaseSettings):
     S3_ENDPOINT: str
     S3_PORT: int = 443
     S3_USE_SSL: bool = True
-    # RustFS, like MinIO, serves path-style; virtual-host style would resolve
-    # bucket.localhost and fail. Region is unused by the server but boto3
-    # refuses to sign a request without one.
+
     S3_PATH_STYLE: bool = True
     S3_REGION: str = "us-east-1"
 
@@ -38,10 +36,7 @@ class Settings(BaseSettings):
     S3_BUCKET_WAREHOUSE: str
     S3_BUCKET_PUBLISHED: str
 
-    # Payload inline at or below this size, by reference above it (open decision #3).
     INLINE_PAYLOAD_MAX_BYTES: int = 65536
-    # Bronze worker commits one Iceberg batch per N messages or T seconds
-    # (open decision #2). Larger window = fewer snapshots; see architecture §7.
     BRONZE_BATCH_SIZE: int = 100
     BRONZE_BATCH_WINDOW_SECONDS: int = 10
 
