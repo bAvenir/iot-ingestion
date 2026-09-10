@@ -3,11 +3,12 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from valkey import ValkeyError, ResponseError
 
 from app.api.ingest import ingest_router
 from app.config import get_settings
-from app.queue import create_client
+from app.queue import STREAM_BRONZE, create_client
 
 settings = get_settings()
 
@@ -25,7 +26,13 @@ async def lifespan(app: FastAPI):
     # One client for the process, reused by every request. Created here rather
     # than at import time so the pool binds to the running event loop.
     app.state.valkey = create_client()
-    # TODO(M2): XGROUP CREATE tasks:bronze bronze-workers $ MKSTREAM (idempotent)
+    try:
+        await app.state.valkey.xgroup_create(
+            STREAM_BRONZE, "bronze-workers", id="$", mkstream=True
+        )
+    except ResponseError as e:
+        if "BUSYGROUP" not in str(e):
+            raise
     yield
     logger.info("Shutting down the application...")
     await app.state.valkey.aclose()
@@ -47,5 +54,11 @@ app.include_router(ingest_router)
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health() -> dict[str, str | int]:
+
+    try:
+        stream_depth = await app.state.valkey.xlen(STREAM_BRONZE)
+    except ValkeyError:
+        raise HTTPException(503, "queue unavailable") from None
+
+    return {"status": "ok", "stream_depth": stream_depth}

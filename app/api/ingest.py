@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Header, HTTPException, Request, status
 from ulid import ULID
+from valkey import ValkeyError
 
 from app.config import get_settings
 from app.models import InlinePayload, JobDescriptor, ReferencePayload
@@ -77,10 +78,15 @@ async def ingest_reading(
         tenant_id=tenant_id,
         device_id=device_id,
         pipeline_hint=pipeline_hint,
+        # domain hint
         received_at=received_at,
         payload=payload,
     )
 
-    await enqueue(request.app.state.valkey, STREAM_BRONZE, descriptor)
+    try:
+        await enqueue(request.app.state.valkey, STREAM_BRONZE, descriptor)
+    except ValkeyError:
+        raise HTTPException(503, "queue unavailable") from None
+
     logger.info("accepted job_id=%s device=%s bytes=%d", job_id, device_id, size_bytes)
     return {"job_id": job_id}
