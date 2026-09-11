@@ -9,7 +9,7 @@ from valkey import ResponseError, ValkeyError
 from app.api.ingest import ingest_router
 from app.catalog import get_catalog
 from app.config import get_settings
-from app.queue import STREAM_BRONZE, create_client
+from app.queue import GROUP_BRONZE, STREAM_BRONZE, create_client
 from app.tables import ensure_bronze_raw
 
 settings = get_settings()
@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
     app.state.valkey = create_client()
     try:
         await app.state.valkey.xgroup_create(
-            STREAM_BRONZE, "bronze-workers", id="$", mkstream=True
+            STREAM_BRONZE, GROUP_BRONZE, id="$", mkstream=True
         )
     except ResponseError as e:
         if "BUSYGROUP" not in str(e):

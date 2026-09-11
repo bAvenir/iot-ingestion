@@ -18,6 +18,9 @@ logger = logging.getLogger(__name__)
 STREAM_BRONZE = "tasks:bronze"
 STREAM_SILVER = "tasks:silver"
 STREAM_PUBLISH = "tasks:publish"
+
+# Consumer group on tasks:bronze. Created in the lifespan, joined by the worker.
+GROUP_BRONZE = "bronze-workers"
 STREAM_MAXLEN = 100_000
 
 
