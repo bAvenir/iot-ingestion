@@ -4,12 +4,12 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
-from valkey import ResponseError, ValkeyError
+from valkey import ValkeyError
 
 from app.api.ingest import ingest_router
 from app.catalog import get_catalog
 from app.config import get_settings
-from app.queue import GROUP_BRONZE, STREAM_BRONZE, create_client
+from app.queue import GROUP_BRONZE, STREAM_BRONZE, create_client, create_group
 from app.tables import ensure_bronze_raw
 
 settings = get_settings()
@@ -26,13 +26,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Initializing the application...")
     app.state.valkey = create_client()
-    try:
-        await app.state.valkey.xgroup_create(
-            STREAM_BRONZE, GROUP_BRONZE, id="$", mkstream=True
-        )
-    except ResponseError as e:
-        if "BUSYGROUP" not in str(e):
-            raise
+
+    await create_group(app.state.valkey, STREAM_BRONZE, GROUP_BRONZE)
 
     ensure_bronze_raw(get_catalog())
 

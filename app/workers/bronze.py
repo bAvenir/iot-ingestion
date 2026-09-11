@@ -2,12 +2,13 @@
 
 XREADGROUP loop, batch to N messages or T seconds. Branch once on payload.mode
 (inline = in hand, reference = fetch from landing/); identical after that.
-Normalise the envelope (ts/timestamp/time -> event_time, fall back to
+Normalize the envelope (ts/timestamp/time -> event_time, fall back to
 received_at), compute schema_fp, leave payload an unparsed JSON string.
 One table.append() per batch, then XACK. Retry with attempt++, dead-letter past 3.
 """
 
 import asyncio
+import hashlib
 import logging
 import os
 import socket
@@ -17,19 +18,21 @@ from pydantic import ValidationError
 
 from app.config import get_settings
 from app.models import JobDescriptor
-from app.queue import GROUP_BRONZE, STREAM_BRONZE, create_client
+from app.queue import GROUP_BRONZE, STREAM_BRONZE, create_client, create_group
+from app.storage import S3Storage
+
+s3_client = S3Storage()
 
 logger = logging.getLogger(__name__)
 
-# Valkey.from_url defaults socket_timeout=5s, so a longer XREADGROUP block would
-# trip the socket read timeout before the command returns. Cap each block below
-# that and let the outer loop re-issue until the batch deadline is reached.
 MAX_BLOCK_MS = 4000
 
 
 async def run(stop: asyncio.Event) -> None:
     settings = get_settings()
     client = create_client()
+
+    await create_group(client, STREAM_BRONZE, GROUP_BRONZE)
 
     consumer = f"bronze-{socket.gethostname()}-{os.getpid()}"
     logger.info("bronze worker started as %s", consumer)
@@ -58,6 +61,44 @@ async def run(stop: asyncio.Event) -> None:
                         logger.warning("unparseable entry %s, skipping", entry_id)
                         continue
                     batch.append((entry_id, descriptor))
+
+        for entry_id, descriptor in batch:
+            if descriptor.payload.mode == "reference":
+                # boto3 is synchronous: to_thread takes the function and its
+                # args, so the blocking call runs off the event loop.
+                raw = await asyncio.to_thread(
+                    s3_client.download_file,
+                    settings.S3_BUCKET_LANDING,
+                    descriptor.payload.s3_key,
+                )
+                payload = raw.decode("utf-8")
+            else:
+                payload = descriptor.payload.data
+                raw = descriptor.payload.data.encode()
+
+            sha256 = hashlib.sha256(raw).hexdigest()
+
+            if sha256 != descriptor.payload.sha256:
+                logger.warning("Sha256 does not match, skipping: %s", sha256)
+                continue
+
+            row = {
+                "job_id": descriptor.job_id,
+                "trace_id": descriptor.trace_id,
+                # These idk
+                # "received_at": datetime(
+                #     2026, 9, 11, 8, 14, 22, tzinfo=UTC
+                # ),  # from the descriptor
+                # "event_time": datetime(2026, 9, 10, 8, 14, 22, tzinfo=UTC),
+                "tenant_id": descriptor.tenant_id,
+                "device_id": descriptor.device_id,
+                "source": "http",  # idk,
+                "pipeline_hint": descriptor.pipeline_hint,
+                "schema_fp": "_",
+                "payload": payload,
+            }
+
+            logger.info(row)
 
         if batch:
             logger.info(

@@ -66,7 +66,7 @@ async def ingest_reading(
 
     else:
         key = f"{received_at:%Y/%m/%d}/{job_id}.json"
-        s3_client.upload_file(settings.S3_BUCKET_LANDING, body, key)
+        s3_client.upload_file(settings.S3_BUCKET_LANDING, key, body)
         payload = ReferencePayload(
             mode="reference", s3_key=key, size_bytes=size_bytes, sha256=digest
         )

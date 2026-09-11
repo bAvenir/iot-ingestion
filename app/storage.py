@@ -12,6 +12,7 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from app.config import get_settings
+from app.exceptions import ObjectNotFound
 
 logger = logging.getLogger(__name__)
 
@@ -31,16 +32,29 @@ class S3Storage:
             # virtual-host style would resolve http://landing.localhost:9000 and fail.
             config=Config(s3={"addressing_style": "path"}),
         )
-        self.bucket = settings.S3_BUCKET_LANDING
 
-    def upload_file(self, bucket, body, key):
+    def upload_file(self, bucket: str, key: str, body: bytes) -> None:
         self.client.put_object(Bucket=bucket, Key=key, Body=body)
 
-    def model_exists(self, key) -> bool:
+    def file_exists(self, bucket: str, key: str) -> bool:
         try:
-            self.client.head_object(Bucket=self.bucket, Key=key)
+            self.client.head_object(Bucket=bucket, Key=key)
             return True
         except ClientError as e:
             if e.response["Error"]["Code"] == "404":
                 return False
+            raise
+
+    def download_file(self, bucket: str, key: str) -> bytes:
+        """Return the object's bytes.
+
+        A missing object raises ObjectNotFound (permanent — do not retry);
+        anything else propagates as ClientError (usually transient).
+        """
+        try:
+            return self.client.get_object(Bucket=bucket, Key=key)["Body"].read()
+        except ClientError as e:
+            if e.response["Error"]["Code"] in ("404", "NoSuchKey"):
+                logger.warning("object not found: %s/%s", bucket, key)
+                raise ObjectNotFound(f"{bucket}/{key}") from e
             raise

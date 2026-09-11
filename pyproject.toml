@@ -9,8 +9,10 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "boto3>=1.43.75",
+    "boto3-stubs~=1.43.75",
     "duckdb>=1.5.5",
     "fastapi>=0.141.1",
+    "joblib>=1.6.0",
     "pyarrow>=25.0.1",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
