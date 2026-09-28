@@ -12,7 +12,8 @@ Sample payloads for `POST /ingest`.
 | `indoor-air-quality.json` | the happy path; `ts` as the event-time spelling |
 | `iot-energy.json` | second mapper; `timestamp` spelling |
 | `vendor-b-fahrenheit.json` | nested payload, Fahrenheit, `time` spelling, vendor-only fields to drop |
-| `unknown-shape.json` | no mapper matches -> dead_letter (M4) |
+| `unknown-shape.json` | no mapper matches -> dead_letter (M4); timestamp spelled `ts`, so only the *shape* is unknown |
+| `unknown-timestamp.json` | known shape, event time spelled `recorded` — not in EVENT_TIME_KEYS, so event_time silently falls back to received_at |
 
 Oversized body, to exercise reference mode (no file committed — generate it):
 
