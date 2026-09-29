@@ -21,6 +21,7 @@ from botocore.exceptions import ClientError
 from pydantic import ValidationError
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.table import Table
+from valkey.asyncio import Valkey
 
 from app.catalog import get_catalog
 from app.config import get_settings
@@ -49,10 +50,13 @@ EVENT_TIME_KEYS = ("ts", "timestamp", "time")
 
 MAX_ATTEMPTS = 3
 
+REASON_VALIDATION_ERROR = "unparseable_descriptor"
 REASON_OBJECT_MISSING = "object_missing"
 REASON_FETCH_FAILED = "fetch_failed"
 REASON_SHA256_MISMATCH = "sha256_mismatch"
 REASON_APPEND_FAILED = "append_failed"
+
+CLAIM_MIN_IDLE_MS = 60_000
 
 
 def extract_event_time(payload: dict, fallback: datetime) -> datetime:
@@ -150,8 +154,55 @@ async def dead_letter(
     row = to_dead_letter_row(descriptor, reason, detail, payload_text)
     await asyncio.to_thread(append_rows, table, [row])
     logger.warning(
-        "dead-lettered %s: reason=%s attempt=%d", descriptor.job_id, reason, row["attempt"]
+        "dead-lettered %s: reason=%s attempt=%d",
+        descriptor.job_id,
+        reason,
+        row["attempt"],
     )
+
+
+async def parse_entries(
+    client: Valkey,
+    dl_table: Table,
+    entries: list[tuple[str, dict]],
+) -> list[tuple[str, JobDescriptor]]:
+
+    batch: list[tuple[str, JobDescriptor]] = []
+
+    for entry_id, fields in entries:
+        try:
+            descriptor = JobDescriptor.model_validate_json(fields.get("job", ""))
+        except ValidationError as e:
+            logger.warning("unparseable entry %s", entry_id)
+
+            dl_row = {
+                "job_id": entry_id,
+                "trace_id": "",
+                "stage": "bronze",
+                "reason": REASON_VALIDATION_ERROR,
+                "detail": f"descriptor failed validation: {e.error_count()} error(s), first: {e.errors()[0]['loc']} {e.errors()[0]['msg']}",
+                "failed_at": datetime.now(UTC),
+                "received_at": datetime.now(UTC),
+                "tenant_id": "",
+                "device_id": "",
+                "attempt": 1,
+                "s3_key": None,
+                "schema_fp": None,
+                "payload": fields.get("job"),
+            }
+
+            try:
+                await asyncio.to_thread(append_rows, dl_table, [dl_row])
+            except Exception:
+                logger.exception("dead letter append failed for %d rows", 1)
+
+            else:
+                await client.xack(STREAM_BRONZE, GROUP_BRONZE, entry_id)
+
+            continue
+        batch.append((entry_id, descriptor))
+
+    return batch
 
 
 async def run(stop: asyncio.Event) -> None:
@@ -171,6 +222,17 @@ async def run(stop: asyncio.Event) -> None:
         batch: list[tuple[str, JobDescriptor]] = []
         deadline = monotonic() + settings.BRONZE_BATCH_WINDOW_SECONDS
 
+        _next, claimed, _deleted = await client.xautoclaim(
+            STREAM_BRONZE,
+            GROUP_BRONZE,
+            consumer,
+            min_idle_time=CLAIM_MIN_IDLE_MS,
+            start_id="0-0",
+            count=settings.BRONZE_BATCH_SIZE,
+        )
+
+        batch.extend(await parse_entries(client, dl_table, claimed))
+
         while len(batch) < settings.BRONZE_BATCH_SIZE and monotonic() < deadline:
             response = await client.xreadgroup(
                 GROUP_BRONZE,
@@ -184,13 +246,7 @@ async def run(stop: asyncio.Event) -> None:
                 continue
 
             for _stream, entries in response:
-                for entry_id, fields in entries:
-                    try:
-                        descriptor = JobDescriptor.model_validate_json(fields["job"])
-                    except ValidationError:
-                        logger.warning("unparseable entry %s, skipping", entry_id)
-                        continue
-                    batch.append((entry_id, descriptor))
+                batch.extend(await parse_entries(client, dl_table, entries))
 
         rows: list[tuple[str, dict]] = []
         descriptors = dict(batch)
