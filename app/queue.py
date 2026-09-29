@@ -8,6 +8,7 @@ messages from a crashed worker.
 
 import logging
 
+from valkey import ResponseError
 from valkey.asyncio import Valkey
 
 from app.config import get_settings
@@ -18,6 +19,9 @@ logger = logging.getLogger(__name__)
 STREAM_BRONZE = "tasks:bronze"
 STREAM_SILVER = "tasks:silver"
 STREAM_PUBLISH = "tasks:publish"
+
+# Consumer group on tasks:bronze. Created in the lifespan, joined by the worker.
+GROUP_BRONZE = "bronze-workers"
 STREAM_MAXLEN = 100_000
 
 
@@ -43,3 +47,13 @@ async def enqueue(client: Valkey, stream: str, descriptor: JobDescriptor) -> str
         "enqueued stream=%s entry=%s job_id=%s", stream, entry_id, descriptor.job_id
     )
     return entry_id
+
+
+async def create_group(valkey_client, STREAM: str, GROUP: str):
+
+    try:
+        await valkey_client.xgroup_create(STREAM, GROUP, id="0", mkstream=True)
+
+    except ResponseError as e:
+        if "BUSYGROUP" not in str(e):
+            raise
