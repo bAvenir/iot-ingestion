@@ -15,3 +15,7 @@ class ObjectNotFound(IngestionError):
     Permanent: retrying cannot help, so the job is dead-lettered rather than
     requeued.
     """
+
+
+class MapperConfigError(IngestionError):
+    """Base class for all Mapper configuration errors."""
