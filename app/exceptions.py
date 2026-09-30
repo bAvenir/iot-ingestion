@@ -19,3 +19,12 @@ class ObjectNotFound(IngestionError):
 
 class MapperConfigError(IngestionError):
     """Base class for all Mapper configuration errors."""
+
+
+class RowRejected(IngestionError):
+    """A row cannot become a silver row. Carries a dead-letter reason code."""
+
+    def __init__(self, reason: str, detail: str) -> None:
+        super().__init__(f"{reason}: {detail}")
+        self.reason = reason
+        self.detail = detail
