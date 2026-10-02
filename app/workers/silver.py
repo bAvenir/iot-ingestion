@@ -18,6 +18,8 @@ from datetime import UTC, datetime
 import pyarrow as pa
 import pyarrow.parquet as pq
 from pydantic import ValidationError
+from pyiceberg.expressions import And, GreaterThanOrEqual, LessThanOrEqual
+from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.table import Table
 
 from app.catalog import get_catalog
@@ -32,7 +34,7 @@ from app.queue import (
     create_client,
     create_group,
 )
-from app.tables import BRONZE_RAW, ensure_dead_letter
+from app.tables import BRONZE_RAW, ensure_dead_letter, ensure_silver_tables
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,46 @@ MAX_BLOCK_MS = 4000
 
 # No hint, no cached fingerprint, no mapper whose required_keys all match.
 REASON_UNRESOLVED = "unresolved"
+
+
+def existing_keys(table: Table, rows: list[dict]) -> set[tuple]:
+    """(device_id, event_time) pairs already in the table for the batch's time range.
+
+    A duplicate has the same event_time, so nothing outside [lo, hi] can match.
+    """
+    if not rows:
+        return set()
+
+    table.refresh()
+
+    times = [row["event_time"] for row in rows]
+    lo = min(times)
+    hi = max(times)
+
+    row_filter = And(
+        GreaterThanOrEqual("event_time", lo.isoformat()),
+        LessThanOrEqual("event_time", hi.isoformat()),
+    )
+
+    existing = (
+        table.scan(row_filter=row_filter, selected_fields=("device_id", "event_time"))
+        .to_arrow()
+        .to_pylist()
+    )
+    return {(row["device_id"], row["event_time"]) for row in existing}
+
+
+def append_rows(table: Table, rows: list[dict]) -> None:
+    """One Iceberg commit for the whole batch.
+
+    Synchronous and slow (writes Parquet, rewrites metadata, compare-and-swaps
+    the catalog pointer), so callers run it off the event loop. The table is
+    refreshed first: another writer may have moved the pointer since the last
+    batch.
+    """
+    table.refresh()
+    arrow = pa.Table.from_pylist(rows, schema=schema_to_pyarrow(table.schema()))
+    table.append(arrow)
 
 
 def to_dead_letter_row_silver(
@@ -95,16 +137,18 @@ async def run(stop: asyncio.Event) -> None:
     client = create_client()
     catalog = get_catalog()
     bronze = catalog.load_table(BRONZE_RAW)
-    dl_table = ensure_dead_letter(catalog)  # noqa: F841 — used once transforms land
+    dl_table = ensure_dead_letter(catalog)
+
+    registry = get_registry()
+    silver = ensure_silver_tables(catalog, list(registry.values()))
 
     await create_group(client, STREAM_SILVER, GROUP_SILVER)
 
     consumer = f"silver-{socket.gethostname()}-{os.getpid()}"
     logger.info("silver worker started as %s", consumer)
 
-    by_table: dict[str, list[dict]] = defaultdict(list)
-
     while not stop.is_set():
+        by_table: dict[str, list[dict]] = defaultdict(list)
         _next, claimed, _deleted = await client.xautoclaim(
             STREAM_SILVER,
             GROUP_SILVER,
@@ -147,7 +191,6 @@ async def run(stop: asyncio.Event) -> None:
 
         dl_rows: list[dict] = []
         for row in rows.to_pylist():
-            registry = get_registry()
             mapper = resolve(row, registry)
 
             if mapper is None:
@@ -169,7 +212,47 @@ async def run(stop: asyncio.Event) -> None:
 
             by_table[mapper.target_table].append(silver_row)
 
-        # 4. Done with this message. Later this moves after the silver appends.
+        # Check duplicates in current batch
+        deduplicated: dict[str, list[dict]] = defaultdict(list)
+
+        for target, target_rows in by_table.items():
+            seen = await asyncio.to_thread(
+                existing_keys, silver[target], target_rows
+            )
+            for row in target_rows:
+                device_id = row["device_id"]
+                event_time = row["event_time"]
+
+                key = (device_id, event_time)
+
+                if key in seen:
+                    continue
+
+                seen.add(key)
+                deduplicated[target].append(row)
+
+        try:
+            if dl_rows:
+                await asyncio.to_thread(append_rows, dl_table, dl_rows)
+
+            for target, target_rows in deduplicated.items():
+                await asyncio.to_thread(append_rows, silver[target], target_rows)
+
+        except Exception:
+            logger.exception(
+                "silver commit failed for snapshot %s, left pending", job.snapshot_id
+            )
+
+            continue
+
         await client.xack(STREAM_SILVER, GROUP_SILVER, entry_id)
+        logger.info(
+            "snapshot %s: wrote %s, %d duplicates skipped, %d dead-lettered",
+            job.snapshot_id,
+            {target: len(r) for target, r in deduplicated.items()},
+            sum(len(r) for r in by_table.values())
+            - sum(len(r) for r in deduplicated.values()),
+            len(dl_rows),
+        )
 
     await client.aclose()

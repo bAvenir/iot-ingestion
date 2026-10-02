@@ -43,7 +43,7 @@ def _column_value(payload: dict, col: Column) -> object:
     if raw is MISSING or raw is None:
         if col.required:
             raise RowRejected(REASON_MISSING_VALUE, f"{col.name} <- {col.from_}")
-        return None  # a missing sensor is NULL, not a rejected row
+        return None
 
     try:
         value = CASTS[col.type](raw)
