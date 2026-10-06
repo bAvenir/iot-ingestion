@@ -54,7 +54,9 @@ def build_filter(
     if device_id:
         row_filter = And(row_filter, EqualTo("device_id", device_id))
     if start:
-        row_filter = And(row_filter, GreaterThanOrEqual("event_time", start.isoformat()))
+        row_filter = And(
+            row_filter, GreaterThanOrEqual("event_time", start.isoformat())
+        )
     if end:
         row_filter = And(row_filter, LessThan("event_time", end.isoformat()))
     return row_filter
@@ -95,11 +97,32 @@ def publish_slice(
     rows = silver_table.scan(row_filter=row_filter, limit=limit).to_arrow().to_pylist()
 
     key = export_key(tenant_id, table, str(ULID()))
+
+    metadata = {
+        "table": table,
+        "tenant_id": tenant_id,
+        "device_id": device_id,
+        "from": start,
+        "to": end,
+        "limit": limit,
+        "count": len(rows),
+        "key": key,
+    }
+
+    file = {
+        "metadata": metadata,
+        "rows": rows
+    }
+
+
     try:
-        _storage().upload_file(get_settings().S3_BUCKET_PUBLISHED, key, to_json(rows))
-    except (ClientError, BotoCoreError):
+        _storage().upload_file(get_settings().S3_BUCKET_PUBLISHED, key, to_json(file))
+    except ClientError, BotoCoreError:
         logger.exception("export upload failed: %s", key)
         raise StorageUnavailable("storage unavailable") from None
+
+
+
 
     return {
         "table": table,
