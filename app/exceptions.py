@@ -28,3 +28,15 @@ class RowRejected(IngestionError):
         super().__init__(f"{reason}: {detail}")
         self.reason = reason
         self.detail = detail
+
+
+class InvalidRequest(IngestionError):
+    """The caller asked for something that cannot be right (HTTP 400)."""
+
+
+class UnknownTable(IngestionError):
+    """No such silver table (HTTP 404)."""
+
+
+class StorageUnavailable(IngestionError):
+    """Object storage could not be reached or refused the write (HTTP 503)."""

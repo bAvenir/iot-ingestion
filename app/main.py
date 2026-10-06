@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 from valkey import ValkeyError
 
 from app.api.ingest import ingest_router
+from app.api.publish import publish_router
 from app.catalog import get_catalog
 from app.config import get_settings
 from app.queue import GROUP_BRONZE, STREAM_BRONZE, create_client, create_group
@@ -44,6 +45,7 @@ app = FastAPI(
 )
 
 app.include_router(ingest_router)
+app.include_router(publish_router)
 
 
 @app.get("/health")
