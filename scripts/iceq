@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Query an Iceberg table with SQL. Inside the query the table is always called `t`.
+#
+#   scripts/iceq tables
+#   scripts/iceq <table> ["<sql>"]
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+usage() {
+  cat <<'HELP'
+Query an Iceberg table with SQL. Inside the query the table is always called `t`.
+
+  scripts/iceq tables                  list the tables
+  scripts/iceq <table>                 first 20 rows
+  scripts/iceq <table> "<sql>"         run a query
+
+Examples
+
+  scripts/iceq silver.air_quality
+
+  # one tenant, one device, one day
+  scripts/iceq silver.air_quality "
+    SELECT device_id, event_time, temperature, humidity FROM t
+    WHERE tenant_id = 'demo' AND device_id = 'sensor-lab-04'
+      AND event_time >= '2026-09-10' AND event_time < '2026-09-11'
+    ORDER BY event_time"
+
+  # what failed, and why
+  scripts/iceq bronze.dead_letter "SELECT stage, reason, count(*) AS n FROM t GROUP BY ALL ORDER BY n DESC"
+
+  # the newest raw readings
+  scripts/iceq bronze.raw "SELECT received_at, device_id, schema_fp, payload FROM t ORDER BY received_at DESC LIMIT 5"
+
+  # rows per mapper
+  scripts/iceq silver.energy "SELECT mapper_id, count(*) AS n FROM t GROUP BY 1"
+
+Times are stored in UTC and shown in your local timezone.
+HELP
+}
+
+if [[ $# -eq 0 || "$1" == "-h" || "$1" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+uv run python - "$@" <<'PY' 2> >(grep -v botocore >&2)
+import sys
+
+import duckdb
+
+from app.catalog import get_catalog
+
+catalog = get_catalog()
+
+if sys.argv[1] == "tables":
+    for (namespace,) in catalog.list_namespaces():
+        for _, name in catalog.list_tables(namespace):
+            print(f"{namespace}.{name}")
+    sys.exit(0)
+
+table = catalog.load_table(sys.argv[1])
+sql = sys.argv[2] if len(sys.argv) > 2 else "SELECT * FROM t LIMIT 20"
+
+con = duckdb.connect()
+con.register("t", table.scan().to_arrow())
+con.sql(sql).show(max_width=200)
+PY
