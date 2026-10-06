@@ -35,7 +35,7 @@ class Mapper(BaseModel):
 
     id: str
     version: int
-    target_table: Literal["silver_air_quality", "silver_energy"]
+    target_table: str
     match: Match
     columns: list[Column]
     event_time_from: str | None = None

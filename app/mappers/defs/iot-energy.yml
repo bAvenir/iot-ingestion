@@ -21,3 +21,10 @@ columns:
     unit: unit:W-HR
     property_iri: qudt:Energy
     min: 0
+
+  - name: current
+    from: current
+    type: double
+    unit: unit:Amper
+    property_iri: qudt:current
+    min: 0

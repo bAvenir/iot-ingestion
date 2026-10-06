@@ -50,7 +50,7 @@ That payload becomes `temperature = 21.4`, `humidity = 46.0`. Anything the mappe
 |---|---|---|
 | `id` | yes | Names this format, in kebab-case. Also what a producer sends as `X-Pipeline-Hint`. |
 | `version` | yes | Integer. Bump it whenever the recipe changes, so rows made by an older version can be found and reprocessed. |
-| `target_table` | yes | The silver table rows go to. Must be one we know: `silver_air_quality` or `silver_energy`. |
+| `target_table` | yes | The silver table rows go to, like `silver_air_quality`. A name no mapper has used before creates a new table when the silver worker starts. |
 | `match` | yes | How to recognise this format when the producer doesn't say. See below. |
 | `event_time_from` | no | Where the reading's timestamp lives. Without it, bronze's best guess is used. |
 | `device_id_from` | no | Where the device id lives, if the vendor calls it something other than `device_id`. |
