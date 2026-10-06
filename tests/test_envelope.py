@@ -98,6 +98,14 @@ def test_unparseable_json_still_produces_a_row():
     assert row["event_time"] == RECEIVED_AT
 
 
+@pytest.mark.parametrize("text", ["[1, 2, 3]", "123", '"just text"', "true", "null"])
+def test_json_that_is_not_an_object_still_produces_a_row(text):
+    # valid JSON, but nothing to look a key up in
+    row = to_bronze_row(descriptor(inline(text)), text)
+    assert row["payload"] == text
+    assert row["event_time"] == RECEIVED_AT
+
+
 def test_inline_and_reference_produce_identical_rows():
     """The done-when: after the mode branch, nothing differs."""
     inline_row = to_bronze_row(descriptor(inline(READING)), READING)
