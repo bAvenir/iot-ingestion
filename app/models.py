@@ -29,7 +29,7 @@ class InlinePayload(BaseModel):
     sha256: str
 
     @model_validator(mode="after")
-    def _size_matches(self) -> "InlinePayload":
+    def _size_matches(self) -> InlinePayload:
         if len(self.data.encode()) != self.size_bytes:
             raise ValueError("size_bytes does not match len(data)")
         return self
@@ -68,3 +68,13 @@ class JobDescriptor(BaseModel):
         if v.tzinfo is None:
             raise ValueError("received_at must be timezone-aware")
         return v.astimezone(UTC)
+
+
+class SnapshotJob(BaseModel):
+    """Tells silver that a bronze commit is ready to transform."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    snapshot_id: int
+    table: str
+    attempt: int = Field(default=1, ge=1)

@@ -21,22 +21,26 @@ from botocore.exceptions import ClientError
 from pydantic import ValidationError
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.table import Table
+from valkey import ValkeyError
 from valkey.asyncio import Valkey
 
 from app.catalog import get_catalog
 from app.config import get_settings
 from app.exceptions import ObjectNotFound
 from app.fingerprint import fingerprint
-from app.models import JobDescriptor
+from app.models import JobDescriptor, SnapshotJob
 from app.queue import (
     GROUP_BRONZE,
     STREAM_BRONZE,
+    STREAM_SILVER,
     create_client,
     create_group,
     enqueue,
 )
 from app.storage import S3Storage
 from app.tables import BRONZE_RAW, ensure_dead_letter
+
+STREAM_MAXLEN = 100_000
 
 logger = logging.getLogger(__name__)
 
@@ -321,7 +325,22 @@ async def run(stop: asyncio.Event) -> None:
                     await client.xack(STREAM_BRONZE, GROUP_BRONZE, entry_id)
                 continue
 
+            snapshot_id = table.current_snapshot().snapshot_id
+            job = SnapshotJob(snapshot_id=snapshot_id, table=BRONZE_RAW)
+
+            try:
+                await client.xadd(
+                    STREAM_SILVER,
+                    {"job": job.model_dump_json()},
+                    maxlen=STREAM_MAXLEN,
+                    approximate=True,
+                )
+            except ValkeyError:
+                logger.exception("could not notify silver of snapshot %s", snapshot_id)
+                continue
+
             await client.xack(STREAM_BRONZE, GROUP_BRONZE, *[e for e, _ in rows])
+
             logger.info(
                 "committed %d rows (%d entries read): %s",
                 len(rows),

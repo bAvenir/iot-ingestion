@@ -20,8 +20,8 @@ STREAM_BRONZE = "tasks:bronze"
 STREAM_SILVER = "tasks:silver"
 STREAM_PUBLISH = "tasks:publish"
 
-# Consumer group on tasks:bronze. Created in the lifespan, joined by the worker.
 GROUP_BRONZE = "bronze-workers"
+GROUP_SILVER = "silver-workers"
 STREAM_MAXLEN = 100_000
 
 

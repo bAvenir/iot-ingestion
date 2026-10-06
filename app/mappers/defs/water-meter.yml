@@ -1,0 +1,23 @@
+id: water-meter
+version: 1
+target_table: silver_water
+
+match:
+  required_keys: [flow_lpm, total_l]
+
+event_time_from: ts
+
+columns:
+  - name: flow
+    from: flow_lpm
+    type: double
+    unit: unit:L-PER-MIN
+    property_iri: qudt:VolumeFlowRate
+    min: 0
+
+  - name: volume
+    from: total_l
+    type: double
+    unit: unit:L
+    property_iri: qudt:Volume
+    min: 0

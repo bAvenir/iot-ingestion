@@ -1,25 +1,25 @@
-id: indoor-air-quality
+id: vendor-b-airquality
 version: 1
 target_table: silver_air_quality
 
 match:
-  required_keys: [temp, hum]
+  required_keys: [measurements.temperature_f, measurements.rh]
 
-event_time_from: ts
+event_time_from: time
 
 columns:
   - name: temperature
-    from: temp
+    from: measurements.temperature_f
     type: double
+    convert: fahrenheit_to_celsius
     unit: unit:DEG_C
     property_iri: qudt:Temperature
     min: -40
     max: 85
 
   - name: humidity
-    from: hum
+    from: measurements.rh
     type: double
-    scale: 100
     unit: unit:PERCENT_RH
     property_iri: qudt:RelativeHumidity
     min: 0
