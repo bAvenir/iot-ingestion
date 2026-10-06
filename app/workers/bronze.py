@@ -94,6 +94,8 @@ def to_bronze_row(descriptor: JobDescriptor, payload_text: str) -> dict:
     except json.JSONDecodeError:
         parsed = {}
 
+    if not isinstance(parsed, dict):
+        parsed = {}
     return {
         "job_id": descriptor.job_id,
         "trace_id": descriptor.trace_id,
